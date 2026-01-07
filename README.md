@@ -85,5 +85,5 @@ You should see output from the simulation, for example:
 
 ```
 Run successful
-Value at 0x2000: 30
+Value at 0x2000: 0x09
 ```

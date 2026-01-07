@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use crate::ast::Address;
 use crate::ast::Instruction;
 use crate::ast::Register;
 
@@ -21,13 +24,21 @@ impl Instruction {
 
             Instruction::LOAD { rd, addr } 
             | Instruction::STORE { rd, addr } =>
-                vec![ opcode, rd.encode(), (*addr >> 8) as u8, *addr as u8 ],
+                if let Address::Addr(a) = addr {
+                    vec![ opcode, rd.encode(), (*a >> 8) as u8, *a as u8 ]
+                } else {
+                    panic!("Label not resolved");
+                }                
 
             Instruction::JMP { addr } 
             | Instruction::JZ { addr } 
             | Instruction::JC { addr }
             | Instruction::JSR { addr } =>
-                vec![ opcode, (*addr >> 8) as u8, *addr as u8 ],
+                if let Address::Addr(a) = addr {
+                    vec![ opcode, (*a >> 8) as u8, *a as u8 ]
+                } else {
+                    panic!("Label not resolved")
+                }
 
             Instruction::RTS
             | Instruction::HLT => 
@@ -48,6 +59,15 @@ fn parse_register(s: &str) -> Option<Register> {
         "R7" => Some(Register::R7),
         _ => None,
     }
+}
+
+fn parse_address(addr: &str) -> Option<Address> {
+    if addr.starts_with("0x") {        
+        let value = u16::from_str_radix(addr.trim_start_matches("0x"), 16).ok()?;
+        Some(Address::Addr(value))
+    } else {
+        Some(Address::Label(addr.to_string()))
+    }    
 }
 
 fn parse_line(line: &str) -> Option<Instruction> {
@@ -94,23 +114,23 @@ fn parse_line(line: &str) -> Option<Instruction> {
         }),
         "LOAD" => Some(Instruction::LOAD {
             rd: parse_register(parts[1])?,
-            addr: u16::from_str_radix(parts[2].trim_start_matches("0x"), 16).ok()?,
+            addr: parse_address(parts[2])?,
         }),
         "STORE" => Some(Instruction::STORE {
             rd: parse_register(parts[1])?,
-            addr: u16::from_str_radix(parts[2].trim_start_matches("0x"), 16).ok()?,
+            addr: parse_address(parts[2])?,
         }),
         "JMP" => Some(Instruction::JMP {
-            addr: u16::from_str_radix(parts[1].trim_start_matches("0x"), 16).ok()?,
+            addr: parse_address(parts[1])?,
         }),
         "JZ" => Some(Instruction::JZ {
-            addr: u16::from_str_radix(parts[1].trim_start_matches("0x"), 16).ok()?,
+            addr: parse_address(parts[1])?,
         }),
         "JC" => Some(Instruction::JC {
-            addr: u16::from_str_radix(parts[1].trim_start_matches("0x"), 16).ok()?,
+            addr: parse_address(parts[1])?,
         }),
         "JSR" => Some(Instruction::JSR {
-            addr: u16::from_str_radix(parts[1].trim_start_matches("0x"), 16).ok()?,
+            addr: parse_address(parts[1])?,
         }),
         "RTS" => Some(Instruction::RTS),
         "HLT" => Some(Instruction::HLT),
@@ -118,17 +138,51 @@ fn parse_line(line: &str) -> Option<Instruction> {
     }
 }
 
+fn create_label_map(lines: &Vec<&str>) -> HashMap<String, u16> {
+    let mut labels = HashMap::new();
+    let mut pc: u16 = 0;
+
+    for line in lines {
+        let line = line.trim();
+        if line.ends_with(':') {
+            let label = line.trim_end_matches(':').to_string();
+            labels.insert(label, pc);
+        } else if let Some(instr) = parse_line(line) {
+            pc += instr.length() as u16;
+        }
+    }
+
+    labels
+}
+
 pub fn assemble(text: &str) -> Vec<u8> {
     let lines: Vec<&str> = text
         .lines()
         .map(|line| line.split(';').next().unwrap().trim()) // strip comments
         .filter(|line| !line.is_empty())
-        .collect();
+        .collect();    
+
+    let labels = create_label_map(&lines);
 
     let program: Vec<Instruction> = lines
         .iter()
+        .filter(|line| !line.ends_with(':'))
         .filter_map(|line| parse_line(line))
+        .map(|mut instr| match &mut instr {
+            Instruction::JMP { addr }
+            | Instruction::JZ { addr }
+            | Instruction::JC { addr } 
+            | Instruction::JSR { addr } => {
+                if let Address::Label(name) = addr {
+                    *addr = Address::Addr(*labels.get(name).expect(&format!("unknown label: {}", name)));
+                }
+                instr
+            }
+            _ => instr
+        })
         .collect();
 
-    program.iter().flat_map(|i| i.encode()).collect()
+    program
+        .iter()
+        .flat_map(|i| i.encode()).collect()
 }

@@ -33,6 +33,7 @@ fn main() {
                 Some(addr) => println!("Value at 0x{0:04X}: 0x{1:02X}", addr, cpu.mem_read(addr)),
                 None => {}
             }
+            println!("Executed {} tick(s)", cpu.ic);
         }
         Err(CpuError::InvalidInstruction) => {
             println!("Invalid instruction: PC={0:04X}", cpu.pc);

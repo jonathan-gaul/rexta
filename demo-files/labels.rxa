@@ -1,0 +1,8 @@
+start:
+    LOADI R0, 0
+loop:
+    ADDI R0, 1
+    JZ end
+    JMP loop
+end:
+    HLT

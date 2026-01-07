@@ -24,6 +24,11 @@ impl Register {
     }
 }
 
+pub enum Address {
+    Addr(u16),
+    Label(String),
+}
+
 pub enum Instruction {
     ADD { rd: Register, rs: Register },
     SUB { rd: Register, rs: Register },
@@ -33,12 +38,12 @@ pub enum Instruction {
     NOT { rd: Register },
     LOADI { rd: Register, imm: u8 },
     ADDI { rd: Register, imm: u8 },
-    LOAD { rd: Register, addr: u16 },
-    STORE { rd: Register, addr: u16 },
-    JMP { addr: u16 },
-    JZ { addr: u16 },
-    JC { addr: u16 },
-    JSR { addr: u16 },
+    LOAD { rd: Register, addr: Address },
+    STORE { rd: Register, addr: Address },
+    JMP { addr: Address },
+    JZ { addr: Address },
+    JC { addr: Address },
+    JSR { addr: Address },
     RTS,
     HLT,
 }

@@ -25,6 +25,9 @@ pub struct Cpu {
 
     /// Instruction Register (current opcode)
     pub ir: u8,
+
+    /// Instruction Counter
+    pub ic: u16,
 }
 
 pub enum CpuError {
@@ -50,7 +53,8 @@ impl Cpu {
 
             is_running: false,
 
-            ir: 0,            
+            ir: 0,
+            ic: 0,
         }
     }
 
@@ -339,9 +343,11 @@ impl Cpu {
     /// Run the CPU until a HLT instruction is reached 
     /// or an error occurs, starting at the current PC.
     pub fn run(&mut self) -> Result<(), CpuError> {
+        self.ic = 0;
         self.is_running = true;
         while self.is_running {
             self.tick()?;
+            self.ic += 1;
         }
         Ok(())
     }

@@ -5,13 +5,20 @@ use ast::Instruction;
 use ast::Register;
 
 fn main() {
-    let i = Instruction::STORE { rd: Register::R3, addr: 0x2000 };
+
+    let program: [Instruction; 5] = [
+        Instruction::LOADI { rd: Register::R0, imm: 10 },
+        Instruction::LOADI { rd: Register::R1, imm: 20 },
+        Instruction::ADD { rd: Register::R0, rs: Register::R1 },
+        Instruction::STORE { rd: Register::R0, addr: 0x2000 },
+        Instruction::HLT,
+    ];
+
+    let v: Vec<u8> = program.iter().flat_map(|i| i.encode()).collect();
     
-    let v = i.encode();
+    println!("Encoded program:");
 
-    println!("Encoded instruction:");
-
-    for n in v {
-        println!("0x{0:02X}", n);
+    for (i, n) in v.iter().enumerate() {
+        println!("0x{0:04X}: 0x{1:02X}", i, n);
     }
 }

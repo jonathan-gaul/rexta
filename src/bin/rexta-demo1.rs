@@ -1,9 +1,6 @@
-mod cpu;
-mod op;
 
-use cpu::Cpu;
-
-use crate::cpu::CpuError;
+use rexta::cpu::Cpu;
+use rexta::cpu::CpuError;
 
 fn main() {
     let program: [u8; 13] = [

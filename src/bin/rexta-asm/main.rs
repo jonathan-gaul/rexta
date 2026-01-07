@@ -1,20 +1,19 @@
 mod ast;
 mod assembler;
 
-use ast::Instruction;
-use ast::Register;
+use crate::assembler::assemble;
 
 fn main() {
 
-    let program: [Instruction; 5] = [
-        Instruction::LOADI { rd: Register::R0, imm: 10 },
-        Instruction::LOADI { rd: Register::R1, imm: 20 },
-        Instruction::ADD { rd: Register::R0, rs: Register::R1 },
-        Instruction::STORE { rd: Register::R0, addr: 0x2000 },
-        Instruction::HLT,
-    ];
-
-    let v: Vec<u8> = program.iter().flat_map(|i| i.encode()).collect();
+    let program = "
+        LOADI R0, 10
+        LOADI R1, 20
+        ADD R0, R1
+        STORE R0, 0x2000
+        HLT
+    ";
+    
+    let v: Vec<u8> = assemble(program);
     
     println!("Encoded program:");
 

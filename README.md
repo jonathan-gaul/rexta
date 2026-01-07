@@ -73,7 +73,7 @@ cd rexta
 Build and run:
 
 ```bash
-cargo run
+cargo run --bin rexta-demo1
 ```
 
 You should see output from the demo program, for example:

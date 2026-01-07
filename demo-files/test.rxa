@@ -1,5 +1,5 @@
     LOADI   R0, 4
-    LOADI   R1, 4
+    LOADI   R1, 5
     ADD     R0, R1
     STORE   R0, 0x2000
     HLT

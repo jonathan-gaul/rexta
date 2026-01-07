@@ -70,13 +70,18 @@ git clone https://github.com/jonathan-gaul/rexta.git
 cd rexta
 ```
 
-Build and run:
+Assemble the demo file:
 
 ```bash
-cargo run --bin rexta-demo1
+cargo run --bin rexta-asm demo-files/test.rxa
 ```
 
-You should see output from the demo program, for example:
+Simulate the demo file:
+```bash
+cargo run --bin rexta-sim demo-files/test.b 0x2000
+```
+
+You should see output from the simulation, for example:
 
 ```
 Run successful

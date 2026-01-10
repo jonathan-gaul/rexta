@@ -1,37 +1,37 @@
 
+use crate::u24::U24;
 use crate::op::Op;
 use crate::op::OpCode;
-use crate::op::OpFormat;
 
 /// Represents the current state of a CPU.
 pub struct Cpu {
     /// Program Counter
-    pub pc: u16,
+    pub pc: U24,
 
-    /// RAM (64KB)
+    /// Addressable memory (up to 16 MiB) - default to 64KiB
     pub mem: [u8; 65536],
 
     /// Registers
-    pub regs: [u8; 8],
+    pub regs: [u8; 9],
 
     /// Flags
     pub flags: u8,
 
     /// Stack Pointer
-    pub sp: u16,
+    pub sp: U24,
 
     /// True if the CPU is currently executing instructions.
     pub is_running: bool,
 
     /// Instruction Register (current opcode)
-    pub ir: u8,
+    pub ir: u16,
 
     /// Instruction Counter
-    pub ic: u16,
+    pub ic: U24,
 }
 
 pub enum CpuError {
-    InvalidOpCode(u8),
+    InvalidOpCode(u16),
     InvalidInstruction,
 }
 
@@ -45,27 +45,27 @@ impl Cpu {
     /// and registers< PC etc set to 0.
     pub fn new() -> Self {
         Cpu {
-            pc: 0,
+            pc: U24::new(0),
             mem: [0; 65536],
-            regs: [0; 8],
+            regs: [0; 9],
             flags: 0,
-            sp: 0xFFFE,
+            sp: U24::new(0xFFFE),
 
             is_running: false,
 
             ir: 0,
-            ic: 0,
+            ic: U24::new(0),
         }
     }
 
     /// Read a value from memory with the given 16-bit address.
-    pub fn mem_read(&self, addr: u16) -> u8 {
-        self.mem[addr as usize]
+    pub fn mem_read(&self, addr: U24) -> u8 {
+        self.mem[addr.value() as usize]
     }
 
     /// Write a value to memory at the given 16-bit address.
-    pub fn mem_write(&mut self, addr: u16, val: u8) {
-        self.mem[addr as usize] = val;
+    pub fn mem_write(&mut self, addr: U24, val: u8) {
+        self.mem[addr.value() as usize] = val;
     }
 
     /// Read a value from the given register.
@@ -73,9 +73,34 @@ impl Cpu {
         self.regs[reg as usize]
     }
 
+    // Read two bytes from register & register+1
+    pub fn reg_read2(&self, reg: u8) -> u16 {
+        (self.regs[reg as usize + 1] as u16) << 8
+        | self.regs[reg as usize] as u16
+    }
+
+    /// Read 3 bytes from register & register+1 & register+2
+    pub fn reg_read3(&self, reg: u8) -> U24 {
+        U24::new((self.regs[reg as usize + 2] as u32) << 16
+        | (self.regs[reg as usize + 1] as u32) << 8
+        | self.regs[reg as usize] as u32)
+    }
+
     /// Write a value to the given register.
     pub fn reg_write(&mut self, reg: u8, val: u8) {
         self.regs[reg as usize] = val;
+    }
+
+    /// Write a 16-bit value to register & register+1
+    pub fn reg_write2(&mut self, reg: u8, val: u16) {
+        self.regs[reg as usize] = (val & 0xFF) as u8;
+        self.regs[reg as usize + 1] = ((val & 0xFF00) >> 8) as u8;
+    }
+
+    pub fn reg_write3(&mut self, reg: u8, val: U24) {
+        self.regs[reg as usize] = (val & 0xFF).into();
+        self.regs[reg as usize + 1] = ((val & 0xFF00) >> 8).into();
+        self.regs[reg as usize + 2] = ((val & 0xFF0000) >> 16).into();
     }
 
     /// Determine whether the given flag is set.
@@ -95,117 +120,25 @@ impl Cpu {
 
     /// Fetch the opcode at the current memory location (pointed to by PC) and increase the program counter by 1.
     fn fetch(&mut self) {
-        self.ir = self.mem[self.pc as usize];
+        self.ir = (self.mem[self.pc.value() as usize] as u16) << 8 & (self.mem[self.pc.value() as usize] as u16);
         self.pc += 1;
     }
 
     /// Decode the current opcode, retrieving required parameters.
     fn decode(&mut self) -> Result<Op, CpuError> {
-        let format = OpFormat::try_from(self.ir >> 4)
-            .map_err(|_| CpuError::InvalidOpCode(self.ir))?;
+        let operand_count = self.ir & 0xE00 >> 9;
 
         let op_code = OpCode::try_from(self.ir)
-            .map_err(|_| CpuError::InvalidOpCode(self.ir))?;        
+            .map_err(|_| CpuError::InvalidOpCode(self.ir))?;
 
-        let op = Op { code: op_code, ..Op::new() };
+        let mut op = Op { code: op_code, ..Op::new() };
 
-        match format {
-            OpFormat::None => 
-                Ok(op),
-            OpFormat::Rd => { // Rd in lower 4 bits
-                let rd = self.mem_read(self.pc) & 0x0F;
-                self.pc += 1;
-                Ok(Op { rd: Some(rd), ..op })
-            }
-            OpFormat::RdRs => {
-                let b = self.mem_read(self.pc);
-                let rd = b & 0x0F;
-                let rs = b >> 4;
-                self.pc += 1;
-                Ok(Op { rd: Some(rd), rs: Some(rs), ..op })
-            }
-            OpFormat::RdImm => {
-                let rd = self.mem_read(self.pc) & 0x0F;
-                self.pc += 1;
-                let imm = self.mem_read(self.pc);
-                self.pc += 1;
-                Ok(Op { rd: Some(rd), imm: Some(imm), ..op })
-            }
-            OpFormat::RdAddr => {
-                let rd = self.mem_read(self.pc) & 0x0F;
-                self.pc += 1;
-                let addr = (self.mem_read(self.pc) as u16) << 8 | self.mem_read(self.pc + 1) as u16;
-                self.pc += 2;
-                Ok(Op { rd: Some(rd), addr: Some(addr), ..op })
-            }
-            OpFormat::Addr => {
-                let addr = (self.mem_read(self.pc) as u16) << 8 | self.mem_read(self.pc + 1) as u16;
-                self.pc += 2;
-                Ok(Op { addr: Some(addr), ..op })
-            }
-        }        
-    }
-
-    // Helper functions for handling missing operands.
-
-    fn with_rd<F>(&mut self, op: &Op, f: F) -> Result<(), CpuError>
-    where 
-        F: FnOnce(u8, &mut Self) -> (),
-    {
-        if let Some(rd) = op.rd {
-            f(rd, self);
-            Ok(())
-        } else {
-            Err(CpuError::InvalidInstruction)
+        for i in 0..operand_count {
+            op.operands[i as usize] = self.mem_read(self.pc);
+            self.pc += 1;
         }
-    }
 
-    fn with_rd_rs<F>(&mut self, op: &Op, f: F) -> Result<(), CpuError>
-    where 
-        F: FnOnce(u8, u8, &mut Self) -> (),
-    {
-        if let (Some(rd), Some(rs)) = (op.rd, op.rs) {
-            f(rd, rs, self);
-            Ok(())
-        } else {
-            Err(CpuError::InvalidInstruction)
-        }
-    }
-
-    fn with_rd_imm<F>(&mut self, op: &Op, f: F) -> Result<(), CpuError> 
-    where 
-        F: FnOnce(u8, u8, &mut Self) -> (),
-    {
-        if let (Some(rd), Some(imm)) = (op.rd, op.imm) {
-            f(rd, imm, self);
-            Ok(())
-        } else {
-            Err(CpuError::InvalidInstruction)
-        }
-    }
-
-    fn with_rd_addr<F>(&mut self, op: &Op, f: F) -> Result<(), CpuError>
-    where 
-        F: FnOnce(u8, u16, &mut Self) -> (),
-    {
-        if let (Some(rd), Some(addr)) = (op.rd, op.addr) {
-            f(rd, addr, self);
-            Ok(())
-        } else {
-            Err(CpuError::InvalidInstruction)
-        }
-    }
-
-    fn with_addr<F>(&mut self, op: &Op, f: F) -> Result<(), CpuError>
-    where 
-        F: FnOnce(u16, &mut Self) -> (),
-    {
-        if let Some(addr) = op.addr {
-            f(addr, self);
-            Ok(())
-        } else {
-            Err(CpuError::InvalidInstruction)
-        }
+        Ok(op)
     }
 
     /// Execute the given operation on the CPU.
@@ -216,7 +149,10 @@ impl Cpu {
             OpCode::RTS => {
                 // Pop address from stack
                 self.sp += 2;
-                let addr = (self.mem_read(self.sp - 1) as u16) << 8 | self.mem_read(self.sp) as u16;
+                let addr =
+                    U24::new(self.mem_read(self.sp - 2) as u32) << 16
+                    | U24::new(self.mem_read(self.sp - 1) as u32) << 8
+                    | U24::new(self.mem_read(self.sp) as u32);
 
                 // Jump to address
                 self.pc = addr;
@@ -228,100 +164,296 @@ impl Cpu {
                 Ok(())
             }
 
-            OpCode::ADD => self.with_rd_rs(&op, |rd, rs, cpu| {                    
-                let value = cpu.reg_read(rd) as u16 + cpu.reg_read(rs) as u16;
-                cpu.reg_write(rd, value as u8);
-                cpu.flag_write(Cpu::FLAG_ZERO, (value as u8) == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, value & 0x100 != 0);
-            }),    
+            // ----------------------------------------
+            // ADD
+            // ----------------------------------------
 
-            OpCode::SUB => self.with_rd_rs(&op, |rd, rs, cpu| {
-                let rdv = cpu.reg_read(rd);
-                let value = rdv as u16 - cpu.reg_read(rs) as u16;
-                cpu.reg_write(rd, value as u8);
-                cpu.flag_write(Cpu::FLAG_ZERO, (value as u8) == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, rdv < cpu.reg_read(rs));
-            }),
-            
-            OpCode::AND => self.with_rd_rs(&op, |rd, rs, cpu| {                
-                let value = cpu.reg_read(rd) & cpu.reg_read(rs);
-                cpu.reg_write(rd, value);
-                cpu.flag_write(Cpu::FLAG_ZERO, value == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);
-            }),
+            OpCode::ADD1 => {
+                let value = self.reg_read(op.rd()) as u16 + self.reg_read(op.rs()) as u16;
+                self.reg_write(op.rd(), value as u8);
+                self.flag_write(Cpu::FLAG_ZERO, (value as u8) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, value & 0x100 != 0);
+                Ok(())
+            },
 
-            OpCode::OR => self.with_rd_rs(&op, |rd, rs, cpu| {                
-                let value = cpu.reg_read(rd) | cpu.reg_read(rs);
-                cpu.reg_write(rd, value);
-                cpu.flag_write(Cpu::FLAG_ZERO, value == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);                    
-            }),
-                 
-            OpCode::XOR => self.with_rd_rs(&op, |rd, rs, cpu| {                
-                let value = cpu.reg_read(rd) ^ cpu.reg_read(rs);
-                cpu.reg_write(rd, value);
-                cpu.flag_write(Cpu::FLAG_ZERO, value == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);                    
-            }),
+            OpCode::ADD2 => {
+                let value: u32 = self.reg_read2(op.rd()) as u32 + self.reg_read2(op.rs()) as u32;
+                self.reg_write2(op.rd(), value as u16);
+                self.flag_write(Cpu::FLAG_ZERO, value as u16 == 0);
+                self.flag_write(Cpu::FLAG_CARRY, value & 0x10000 != 0);
 
-            OpCode::NOT => self.with_rd(&op, |rd, cpu| {                
-                let value = !cpu.reg_read(rd);
-                cpu.reg_write(rd, value);
-                cpu.flag_write(Cpu::FLAG_ZERO, value == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);
-            }),
+                Ok(())
+            }
 
-            OpCode::LOADI => self.with_rd_imm(&op, |rd, imm, cpu| {                
-                cpu.reg_write(rd, imm);
-                cpu.flag_write(Cpu::FLAG_ZERO, imm == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);                   
-            }),
+            OpCode::ADD3 => {
+                let lhs: u32 = self.reg_read3(op.rd()).into();
+                let rhs: u32 = self.reg_read3(op.rs()).into();
+                let value = lhs + rhs;
+                self.reg_write3(op.rd(), U24::new(value));
+                self.flag_write(Cpu::FLAG_ZERO, value & 0xFFFFFF == 0);
+                self.flag_write(Cpu::FLAG_CARRY, value & 0x1000000 != 0);
+                Ok(())
+            }
 
-            OpCode::ADDI => self.with_rd_imm(&op, |rd, imm, cpu| {                
-                let value = cpu.reg_read(rd) as u16 + imm as u16;
-                cpu.reg_write(rd, value as u8);
-                cpu.flag_write(Cpu::FLAG_ZERO, (value as u8) == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, value & 0x100 != 0);
-            }),
+            // ----------------------------------------
+            // SUB
+            // ----------------------------------------
 
-            OpCode::LOAD => self.with_rd_addr(&op, |rd, addr, cpu| {                
-                let value = cpu.mem_read(addr);
-                cpu.reg_write(rd, value);
-                cpu.flag_write(Cpu::FLAG_ZERO, value == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);
-            }),
+            OpCode::SUB1 => {
+                let rdv: u16 = self.reg_read(op.rd()) as u16;
+                let rsv: u16 = self.reg_read(op.rs()) as u16;
+                let value: u16 = rdv - rsv;
+                self.reg_write(op.rd(), value as u8);
+                self.flag_write(Cpu::FLAG_ZERO, (value as u8) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, rdv < rsv);
+                Ok(())
+            }
 
-            OpCode::STORE => self.with_rd_addr(&op, |rd, addr, cpu| {                
-                let value = cpu.reg_read(rd);
-                cpu.mem_write(addr, value);
-                cpu.flag_write(Cpu::FLAG_ZERO, value == 0);
-                cpu.flag_write(Cpu::FLAG_CARRY, false);
-            }),
+            OpCode::SUB2 => {
+                let rdv: u32 = self.reg_read2(op.rd()) as u32;
+                let rsv: u32 = self.reg_read2(op.rs()) as u32;
+                let value: u32 = rdv - rsv;
+                self.reg_write2(op.rd(), value as u16);
+                self.flag_write(Cpu::FLAG_ZERO, (value as u16) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, rdv < rsv);
+                Ok(())
+            }
 
-            OpCode::JMP => self.with_addr(&op, |addr, cpu| {                
-                cpu.pc = addr;
-            }),                        
+            OpCode::SUB3 => {
+                let rdv: u32 = self.reg_read3(op.rd()).into();
+                let rsv: u32 = self.reg_read3(op.rs()).into();
+                let value: U24 = U24::new(rdv - rsv);
+                self.reg_write3(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, rdv < rsv);
+                Ok(())
+            }
 
-            OpCode::JZ => self.with_addr(&op, |addr, cpu| {                
-                if cpu.flag_read(Cpu::FLAG_ZERO) {
-                    cpu.pc = addr;                            
+            // ----------------------------------------
+            // AND
+            // ----------------------------------------
+
+            OpCode::AND1 => {
+                let value: u8 = self.reg_read(op.rd()) & self.reg_read(op.rs());
+                self.reg_write(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::AND2 => {
+                let value: u16 = self.reg_read2(op.rd()) & self.reg_read2(op.rs());
+                self.reg_write2(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::AND3 => {
+                let value: U24 = self.reg_read3(op.rd()) & self.reg_read3(op.rs());
+                self.reg_write3(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            // ----------------------------------------
+            // OR
+            // ----------------------------------------
+
+            OpCode::OR1 => {
+                let value: u8 = self.reg_read(op.rd()) | self.reg_read(op.rs());
+                self.reg_write(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::OR2 => {
+                let value: u16 = self.reg_read2(op.rd()) | self.reg_read2(op.rs());
+                self.reg_write2(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::OR3 => {
+                let value: U24 = self.reg_read3(op.rd()) | self.reg_read3(op.rs());
+                self.reg_write3(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            // ----------------------------------------
+            // XOR
+            // ----------------------------------------
+
+            OpCode::XOR1 => {
+                let value: u8 = self.reg_read(op.rd()) ^ self.reg_read(op.rs());
+                self.reg_write(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::XOR2 => {
+                let value: u16 = self.reg_read2(op.rd()) ^ self.reg_read2(op.rs());
+                self.reg_write2(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::XOR3 => {
+                let value: U24 = self.reg_read3(op.rd()) ^ self.reg_read3(op.rs());
+                self.reg_write3(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            // ----------------------------------------
+            // NOT
+            // ----------------------------------------
+
+            OpCode::NOT1 => {
+                let value: u8 = !self.reg_read(op.rd());
+                self.reg_write(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::NOT2 => {
+                let value: u16 = !self.reg_read2(op.rd());
+                self.reg_write2(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            OpCode::NOT3 => {
+                let value: U24 = !self.reg_read3(op.rd());
+                self.reg_write3(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            }
+
+            // ----------------------------------------
+            // LOADI
+            // ----------------------------------------
+
+            OpCode::LOADI1 => {
+                let imm = op.operands[0];
+                self.reg_write(op.rd(), imm);
+                self.flag_write(Cpu::FLAG_ZERO, imm == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            },
+
+            OpCode::LOADI2 => {
+                let imm: u16 = op.operands[0] as u16 | (op.operands[1] as u16) << 8;
+                self.reg_write2(op.rd(), imm);
+                self.flag_write(Cpu::FLAG_ZERO, imm == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            },
+
+            OpCode::LOADI3 => {
+                let imm: U24 = U24::new(
+                    op.operands[0] as u32
+                    | (op.operands[1] as u32) << 8
+                    | (op.operands[2] as u32) << 16);
+                self.reg_write3(op.rd(), imm);
+                self.flag_write(Cpu::FLAG_ZERO, imm == 0);
+                self.flag_write(Cpu::FLAG_CARRY, false);
+                Ok(())
+            },
+
+            // ----------------------------------------
+            // INC
+            // ----------------------------------------
+
+            OpCode::INC1 => {
+                let value: u16 = self.reg_read(op.rd()) as u16 + 1;
+                self.reg_write(op.rd(), (value & 0xFF) as u8);
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0x100) != 0);
+                Ok(())
+            }
+
+            OpCode::INC2 => {
+                let value: u32 = self.reg_read2(op.rd()) as u32 + 1;
+                self.reg_write2(op.rd(), (value & 0xFFFF) as u16);
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0x10000) != 0);
+                Ok(())
+            }
+
+            OpCode::INC3 => {
+                let mut value: u32 = self.reg_read3(op.rd()).into();
+                value += 1;
+                self.reg_write3(op.rd(), U24::new(value));
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFFFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0x1000000) != 0);
+                Ok(())
+            }
+
+            // ----------------------------------------
+            // DEC
+            // ----------------------------------------
+
+            OpCode::DEC1 => {
+                let value: u16 = self.reg_read(op.rd()) as u16 - 1;
+                self.reg_write(op.rd(), (value & 0xFF) as u8);
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0xFF) == 0xFF);
+                Ok(())
+            }
+
+            OpCode::DEC2 => {
+                let value: u32 = self.reg_read2(op.rd()) as u32 - 1;
+                self.reg_write2(op.rd(), (value & 0xFFFF) as u16);
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0xFFFF) == 0xFFFF);
+                Ok(())
+            }
+
+            OpCode::DEC3 => {
+                let value = self.reg_read3(op.rd()) - 1;
+                self.reg_write3(op.rd(), value);
+                self.flag_write(Cpu::FLAG_ZERO, value == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0xFFFFFF) == 0xFFFFFF);
+                Ok(())
+            }
+
+            // ----------------------------------------
+            // JMP
+            // ----------------------------------------
+
+            OpCode::JMP => {
+                self.pc = U24::new(
+                    op.operands[0] as u32 |
+                    (op.operands[1] as u32) << 8 |
+                    (op.operands[2] as u32) << 16);
+                Ok(())
+            },
+
+            OpCode::JZ => {
+                if self.flag_read(Cpu::FLAG_ZERO) {
+                    self.pc = U24::new(
+                    op.operands[0] as u32 |
+                    (op.operands[1] as u32) << 8 |
+                    (op.operands[2] as u32) << 16);
                 }
-            }),                    
+                Ok(())
+            },
 
-            OpCode::JC => self.with_addr(&op, |addr, cpu| {                
-                if cpu.flag_read(Cpu::FLAG_CARRY) {
-                    cpu.pc = addr;
-                }
-            }),
-
-            OpCode::JSR => self.with_addr(&op, |addr, cpu| {                
-                // Push PC to stack
-                cpu.mem_write(cpu.sp, cpu.pc as u8);
-                cpu.mem_write(cpu.sp - 1, (cpu.pc >> 8) as u8);
-                cpu.sp -= 2;
-                // Jump
-                cpu.pc = addr;
-            }),
+            _ => {
+                panic!("Trait not implemented")
+            }
 
         }
     }
@@ -340,10 +472,10 @@ impl Cpu {
     //     self.is_running = false;
     // }
 
-    /// Run the CPU until a HLT instruction is reached 
+    /// Run the CPU until a HLT instruction is reached
     /// or an error occurs, starting at the current PC.
     pub fn run(&mut self) -> Result<(), CpuError> {
-        self.ic = 0;
+        self.ic = U24::new(0);
         self.is_running = true;
         while self.is_running {
             self.tick()?;

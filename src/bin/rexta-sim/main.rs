@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path};
-
 use rexta::cpu::{Cpu, CpuError};
+use rexta::u24::U24;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -16,7 +16,7 @@ fn main() {
         if args.len() < 3 {
             None
         } else {
-            Some(u16::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap())
+            Some(U24::new(u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()))
         };
 
     println!("Executing: {}", source_path.display());

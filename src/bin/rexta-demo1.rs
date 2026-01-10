@@ -1,6 +1,7 @@
 
 use rexta::cpu::Cpu;
 use rexta::cpu::CpuError;
+use rexta::u24::U24;
 
 fn main() {
     let program: [u8; 13] = [
@@ -17,7 +18,7 @@ fn main() {
     match cpu.run() {
         Ok(()) => {
             println!("Run successful");
-            println!("Value at 0x2000: {0}", cpu.mem_read(0x2000));
+            println!("Value at 0x2000: {0}", cpu.mem_read(U24::new(0x2000)));
         }
         Err(CpuError::InvalidInstruction) => {
             println!("Invalid instruction: PC={0:4X}", cpu.pc);

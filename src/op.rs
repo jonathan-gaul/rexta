@@ -25,16 +25,16 @@ impl Op {
         self.operands[0] & 0x0F
     }
 
-    pub fn read_u8(&self, index: u32) -> u8 {
+    pub fn read_op(&self, index: u32) -> u8 {
         self.operands[index as usize]
     }
 
-    pub fn read_u16(&self, index: u32) -> u16 {
+    pub fn read_op2(&self, index: u32) -> u16 {
         self.operands[index as usize] as u16
         | (self.operands[index as usize + 1] as u16) << 8
     }
 
-    pub fn read_u24(&self, index: u32) -> U24 {
+    pub fn read_op3(&self, index: u32) -> U24 {
         U24::new(
             self.operands[index as usize] as u32 
             | (self.operands[index as usize + 1] as u32) << 8

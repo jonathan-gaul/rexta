@@ -346,7 +346,7 @@ impl Cpu {
             // ----------------------------------------
 
             OpCode::LOADI1 => {
-                let imm = op.operands[0];
+                let imm = op.read_op(1);
                 self.reg_write(op.rd(), imm);
                 self.flag_write(Cpu::FLAG_ZERO, imm == 0);
                 self.flag_write(Cpu::FLAG_CARRY, false);
@@ -354,7 +354,7 @@ impl Cpu {
             },
 
             OpCode::LOADI2 => {
-                let imm: u16 = op.operands[0] as u16 | (op.operands[1] as u16) << 8;
+                let imm: u16 = op.read_op2(1);
                 self.reg_write2(op.rd(), imm);
                 self.flag_write(Cpu::FLAG_ZERO, imm == 0);
                 self.flag_write(Cpu::FLAG_CARRY, false);
@@ -362,10 +362,7 @@ impl Cpu {
             },
 
             OpCode::LOADI3 => {
-                let imm: U24 = U24::new(
-                    op.operands[0] as u32
-                    | (op.operands[1] as u32) << 8
-                    | (op.operands[2] as u32) << 16);
+                let imm: U24 = op.read_op3(1);
                 self.reg_write3(op.rd(), imm);
                 self.flag_write(Cpu::FLAG_ZERO, imm == 0);
                 self.flag_write(Cpu::FLAG_CARRY, false);
@@ -377,7 +374,7 @@ impl Cpu {
             // ----------------------------------------
 
             OpCode::ADDI1 => {
-                let value: u16 = self.reg_read(op.rd()) as u16 + op.read_u8(1) as u16;
+                let value: u16 = self.reg_read(op.rd()) as u16 + op.read_op(1) as u16;
                 self.reg_write(op.rd(), (value & 0xFF) as u8);
                 self.flag_write(Cpu::FLAG_ZERO, (value & 0xFF) == 0);
                 self.flag_write(Cpu::FLAG_CARRY, (value & 0x100) != 0);
@@ -385,7 +382,7 @@ impl Cpu {
             }
 
             OpCode::ADDI2 => {
-                let value: u32 = self.reg_read2(op.rd()) as u32 + op.read_u16(1) as u32;
+                let value: u32 = self.reg_read2(op.rd()) as u32 + op.read_op2(1) as u32;
                 self.reg_write2(op.rd(), (value & 0xFFFF) as u16);
                 self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFF) == 0);
                 self.flag_write(Cpu::FLAG_CARRY, (value & 0x10000) != 0);
@@ -394,7 +391,7 @@ impl Cpu {
 
             OpCode::ADDI3 => {
                 let mut value: u32 = self.reg_read3(op.rd()).into();
-                value += op.read_u24(1).as_u32();
+                value += op.read_op3(1).as_u32();
                 self.reg_write3(op.rd(), U24::new(value));
                 self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFFFF) == 0);
                 self.flag_write(Cpu::FLAG_CARRY, (value & 0x1000000) != 0);

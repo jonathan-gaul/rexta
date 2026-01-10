@@ -373,6 +373,35 @@ impl Cpu {
             },
 
             // ----------------------------------------
+            // ADDI
+            // ----------------------------------------
+
+            OpCode::ADDI1 => {
+                let value: u16 = self.reg_read(op.rd()) as u16 + op.read_u8(1) as u16;
+                self.reg_write(op.rd(), (value & 0xFF) as u8);
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0x100) != 0);
+                Ok(())
+            }
+
+            OpCode::ADDI2 => {
+                let value: u32 = self.reg_read2(op.rd()) as u32 + op.read_u16(1) as u32;
+                self.reg_write2(op.rd(), (value & 0xFFFF) as u16);
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0x10000) != 0);
+                Ok(())
+            }
+
+            OpCode::ADDI3 => {
+                let mut value: u32 = self.reg_read3(op.rd()).into();
+                value += op.read_u24(1).as_u32();
+                self.reg_write3(op.rd(), U24::new(value));
+                self.flag_write(Cpu::FLAG_ZERO, (value & 0xFFFFFF) == 0);
+                self.flag_write(Cpu::FLAG_CARRY, (value & 0x1000000) != 0);
+                Ok(())
+            }
+
+            // ----------------------------------------
             // INC
             // ----------------------------------------
 

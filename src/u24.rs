@@ -1,4 +1,6 @@
 use std::ops::{Add, Sub, AddAssign, SubAssign, BitAnd, BitOr, BitXor, Shl, Shr, Not};
+use std::str::FromStr;
+use std::num::ParseIntError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct U24(u32);
@@ -39,6 +41,22 @@ impl U24 {
     /// Get the full 24-bit value as u32
     pub fn as_u32(self) -> u32 {
         self.0
+    }
+
+    pub fn to_le_bytes(self) -> [u8; 3] {
+        [
+            (self.0 & 0xFF) as u8,
+            ((self.0 >> 8) & 0xFF) as u8,
+            ((self.0 >> 16) & 0xFF) as u8,
+        ]
+    }
+
+    pub fn from_le_bytes(bytes: [u8; 3]) -> Self {
+        let v =
+            (bytes[0] as u32)
+          | ((bytes[1] as u32) << 8)
+          | ((bytes[2] as u32) << 16);
+        U24::new(v)
     }
 }
 
@@ -214,5 +232,17 @@ impl Ord for U24 {
 impl PartialOrd for U24 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl FromStr for U24 {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let radix = if s.starts_with("0x") { 16 } else { 10 };
+        // Parse as u32 first
+        let v = u32::from_str_radix(s, radix)?;
+        // Mask to 24 bits
+        Ok(U24::new(v))
     }
 }

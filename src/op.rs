@@ -30,16 +30,21 @@ impl Op {
     }
 
     pub fn read_op2(&self, index: u32) -> u16 {
-        self.operands[index as usize] as u16
-        | (self.operands[index as usize + 1] as u16) << 8
+        let pos = index as usize;
+        let bytes = self.operands[pos..pos+2]
+            .try_into()
+            .expect("Out of bounds");
+
+        u16::from_le_bytes(bytes)
     }
 
     pub fn read_op3(&self, index: u32) -> U24 {
-        U24::new(
-            self.operands[index as usize] as u32 
-            | (self.operands[index as usize + 1] as u32) << 8
-            | (self.operands[index as usize + 2] as u32)
-        )
+        let pos = index as usize;
+        let bytes = self.operands[pos..pos+3]
+            .try_into()
+            .expect("Out of bounds");
+
+        U24::from_le_bytes(bytes)
     }
 }
 
@@ -47,6 +52,7 @@ impl Op {
 /// A complete list is here:
 /// https://github.com/jonathan-gaul/rexta-docs/blob/main/CPU/OpCode%20Table.xlsx
 #[repr(u16)]
+#[derive(Debug, Clone)]
 pub enum OpCode {
     NOP = 0x0000,
 

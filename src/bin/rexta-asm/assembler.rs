@@ -38,10 +38,10 @@ impl Instruction {
             | Instruction::ROR3 { rd }
             | Instruction::POP1 { rd }
             | Instruction::POP2 { rd }
-            | Instruction::POP3 { rd } => vec![rd.encode()],
+            | Instruction::POP3 { rd } => vec![rd.encode() << 4],
 
             Instruction::PUSH1 { rs } | Instruction::PUSH2 { rs } | Instruction::PUSH3 { rs } => {
-                vec![rs.encode() << 4]
+                vec![rs.encode()]
             }
 
             Instruction::ADD1 { rd, rs }
@@ -67,20 +67,20 @@ impl Instruction {
             | Instruction::CMP3 { rd, rs }
             | Instruction::TST1 { rd, rs }
             | Instruction::TST2 { rd, rs }
-            | Instruction::TST3 { rd, rs } => vec![rs.encode() << 4 | rd.encode()],
+            | Instruction::TST3 { rd, rs } => vec![rs.encode() | rd.encode() << 4],
 
             Instruction::LOADI1 { rd, imm } | Instruction::ADDI1 { rd, imm } => {
-                vec![rd.encode(), *imm]
+                vec![rd.encode() << 4, *imm]
             }
 
             Instruction::LOADI2 { rd, imm } | Instruction::ADDI2 { rd, imm } => {
                 let [b1, b2] = imm.to_le_bytes();
-                vec![rd.encode(), b1, b2]
+                vec![rd.encode() << 4, b1, b2]
             }
 
             Instruction::LOADI3 { rd, imm } | Instruction::ADDI3 { rd, imm } => {
                 let [b1, b2, b3] = imm.to_le_bytes();
-                vec![rd.encode(), b1, b2, b3]
+                vec![rd.encode() << 4, b1, b2, b3]
             }
 
             Instruction::LOAD1 { rd, addr }
@@ -88,7 +88,7 @@ impl Instruction {
             | Instruction::LOAD3 { rd, addr } => {
                 if let Address::Addr(a) = addr {
                     let [b1, b2, b3] = a.to_le_bytes();
-                    vec![rd.encode(), b1, b2, b3]
+                    vec![rd.encode() << 4, b1, b2, b3]
                 } else {
                     panic!("Label not resolved")
                 }
@@ -148,7 +148,7 @@ fn parse_register(s: &str) -> Option<Register> {
 }
 
 fn parse_address(addr: &str) -> Option<Address> {
-    if addr.starts_with("0x") {
+    if addr.starts_with("0x") || addr.starts_with(&['0','1','2','3','4','5','6','7','8','9']) {
         let value: U24 = addr.parse().ok()?;
         Some(Address::Addr(value))
     } else {
@@ -412,6 +412,10 @@ pub fn assemble(text: &str) -> Vec<u8> {
         .iter()
         .filter(|line| !line.ends_with(':'))
         .filter_map(|line| parse_line(line))
+        .map(|instr| {
+            println!("  {:?} => {:?}", instr, instr.encode());
+            instr
+        })
         .map(|mut instr| match &mut instr {
             Instruction::JMP { addr }
             | Instruction::JZ { addr }

@@ -1,7 +1,7 @@
 start:
-    LOADI R0, 0
+    LOADI.2 R0, 512
 loop:
-    ADDI R0, 1
+    ADDI.1 R0, 1
     JZ end
     JMP loop
 end:

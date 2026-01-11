@@ -58,14 +58,28 @@ impl Cpu {
         }
     }
 
-    /// Read a value from memory with the given 16-bit address.
+    /// Read a value from memory with the given address.
     pub fn mem_read(&self, addr: U24) -> u8 {
         self.mem[addr.value() as usize]
     }
 
-    /// Write a value to memory at the given 16-bit address.
+    /// Write a byte to memory at the given address.
     pub fn mem_write(&mut self, addr: U24, val: u8) {
         self.mem[addr.value() as usize] = val;
+    }
+
+    /// Write two bytes to memory at the given address.
+    pub fn mem_write2(&mut self, addr: U24, val: u16) {
+        let bytes = val.to_le_bytes();
+        let pos = addr.value() as usize;
+        self.mem[pos..pos+2].copy_from_slice(&bytes);
+    }
+
+    /// Write three bytes to memory at the given address.
+    pub fn mem_write3(&mut self, addr: U24, val: U24) {
+        let bytes = val.to_le_bytes();
+        let pos = addr.value() as usize;
+        self.mem[pos..pos+3].copy_from_slice(&bytes);
     }
 
     /// Read a value from the given register.
@@ -81,9 +95,13 @@ impl Cpu {
 
     /// Read 3 bytes from register & register+1 & register+2
     pub fn reg_read3(&self, reg: u8) -> U24 {
-        U24::new((self.regs[reg as usize + 2] as u32) << 16
-        | (self.regs[reg as usize + 1] as u32) << 8
-        | self.regs[reg as usize] as u32)
+        let pos = reg as usize;
+
+        let bytes: [u8; 3] = self.regs[pos..pos + 3]
+            .try_into()
+            .expect("out of bounds read");
+
+        U24::from_le_bytes(bytes)
     }
 
     /// Write a value to the given register.
@@ -98,9 +116,10 @@ impl Cpu {
     }
 
     pub fn reg_write3(&mut self, reg: u8, val: U24) {
-        self.regs[reg as usize] = (val & 0xFF).into();
-        self.regs[reg as usize + 1] = ((val & 0xFF00) >> 8).into();
-        self.regs[reg as usize + 2] = ((val & 0xFF0000) >> 16).into();
+        let bytes = val.to_le_bytes();
+        println!("reg_write3: {:?} @ {:?}", bytes, reg);
+        let pos = reg as usize;
+        self.regs[pos..pos+3].copy_from_slice(&bytes);
     }
 
     /// Determine whether the given flag is set.
@@ -118,15 +137,16 @@ impl Cpu {
         }
     }
 
-    /// Fetch the opcode at the current memory location (pointed to by PC) and increase the program counter by 1.
+    /// Fetch the opcode at the current memory location (pointed to by PC) and increase the program counter by 2.
     fn fetch(&mut self) {
-        self.ir = (self.mem[self.pc.value() as usize] as u16) << 8 & (self.mem[self.pc.value() as usize] as u16);
-        self.pc += 1;
+        let pos = self.pc.value() as usize;
+        self.ir = u16::from_le_bytes(self.mem[pos..pos + 2].try_into().expect("Out of bounds"));
+        self.pc += 2;
     }
 
     /// Decode the current opcode, retrieving required parameters.
     fn decode(&mut self) -> Result<Op, CpuError> {
-        let operand_count = self.ir & 0xE00 >> 9;
+        let operand_count = ((self.ir & 0xE00) >> 9) as usize;
 
         let op_code = OpCode::try_from(self.ir)
             .map_err(|_| CpuError::InvalidOpCode(self.ir))?;
@@ -134,7 +154,7 @@ impl Cpu {
         let mut op = Op { code: op_code, ..Op::new() };
 
         for i in 0..operand_count {
-            op.operands[i as usize] = self.mem_read(self.pc);
+            op.operands[i] = self.mem_read(self.pc);
             self.pc += 1;
         }
 
@@ -181,7 +201,6 @@ impl Cpu {
                 self.reg_write2(op.rd(), value as u16);
                 self.flag_write(Cpu::FLAG_ZERO, value as u16 == 0);
                 self.flag_write(Cpu::FLAG_CARRY, value & 0x10000 != 0);
-
                 Ok(())
             }
 
@@ -361,7 +380,7 @@ impl Cpu {
                 Ok(())
             },
 
-            OpCode::LOADI3 => {
+            OpCode::LOADI3 => {                
                 let imm: U24 = op.read_op3(1);
                 self.reg_write3(op.rd(), imm);
                 self.flag_write(Cpu::FLAG_ZERO, imm == 0);
@@ -477,8 +496,25 @@ impl Cpu {
                 Ok(())
             },
 
+            // ----------------------------------------
+            // STORE
+            // ----------------------------------------
+
+            OpCode::STORE1 => {
+                self.mem_write(op.read_op3(1),self.reg_read(op.rs()));
+                Ok(())
+            }
+            OpCode::STORE2 => {
+                self.mem_write2(op.read_op3(1), self.reg_read2(op.rs()));
+                Ok(())
+            }
+            OpCode::STORE3 => {                
+                self.mem_write3(op.read_op3(1), self.reg_read3(op.rs()));
+                Ok(())
+            }
+
             _ => {
-                panic!("Trait not implemented")
+                panic!("OpCode not implemented")
             }
 
         }
@@ -493,10 +529,10 @@ impl Cpu {
         Ok(())
     }
 
-    // pub fn halt(&mut self) {
-    //     println!("CPU halted!");
-    //     self.is_running = false;
-    // }
+    pub fn halt(&mut self) {
+        println!("CPU halted!");
+        self.is_running = false;
+    }
 
     /// Run the CPU until a HLT instruction is reached
     /// or an error occurs, starting at the current PC.

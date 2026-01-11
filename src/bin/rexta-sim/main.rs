@@ -40,7 +40,7 @@ fn main() {
 
         }
         Err(CpuError::InvalidOpCode(code)) => {
-            println!("Invalid opcode {0}: PC={1:04X}", code, cpu.pc);
+            println!("Invalid opcode 0x{0:02X}: PC=0x{1:04X}", code, cpu.pc);
         }
     }
 }

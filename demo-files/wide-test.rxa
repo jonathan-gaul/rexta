@@ -1,0 +1,5 @@
+start:
+    LOADI.3 R0, 255
+    LOADI.3 R3, 511
+    STORE.3 R3, 8192
+    HLT
